@@ -5,6 +5,7 @@ import serial
 import sqlite3
 import os
 import sys
+from datetime import datetime
 import time
 import logging
 import logging.handlers
@@ -33,6 +34,9 @@ GPIO.output(17, GPIO.LOW)
 pygame.mixer.init()
 pygame.mixer.music.set_volume(1.0)
 
+def datetime_converter(s):
+	return datetime.strptime(s, '%Y-%d-%d %H:%M:%S')
+#sqlite3.register_converter("datetime", datetime_converter)
 
 def dict_factory(cursor, row):
 	d = {}
@@ -40,18 +44,9 @@ def dict_factory(cursor, row):
 		d[col[0]] = row[idx]
 	return d
 
-def read_card():
-	card = None
-	while True:
-		temp = ser.readline()
-		if temp:
-			card = temp
-		elif card:
-			return card
-
 def query_cards(card):
 	cur = db.cursor()
-	query = "SELECT * FROM cards WHERE serial = '%s'" % card
+	query = "SELECT * FROM cards WHERE serial = '%s' ORDER BY id ASC" % card
 	cur.execute(query)
 
 	log.debug(query)
@@ -76,9 +71,6 @@ def update_timestamp(card):
 
 	db.commit()
 
-def validate_card(card):
-	pass
-
 def play_sound(path):
 	if not (path and os.path.exists(path)):
 		return
@@ -90,31 +82,45 @@ def play_sound(path):
 		except:
 			log.warn("Failed to sound '%s'" % (path))
 
+last_card = None
 while True:
-	card = read_card()
+	# Read from the serial port and skip duplicates
+	card = ser.readline()
+	if not card:
+		last_card = None
+		continue
+	if card == last_card:
+		continue
+	last_card = card
+
 	# Card numbers are 10, pull the \r\n off the end
 	card = card[:10]
-
 	log.info("Card read: %s" % (card))
 
 	db = sqlite3.connect(db_file)
 	db.row_factory = dict_factory
 
-	#q = "UPDATE cards SET serial = '%s' WHERE serial = '%s'" % (card, card[::-1])
-	#db.execute(q)
+	# Remove all reversed card serial numbers
+	q = "UPDATE cards SET serial = '%s' WHERE serial = '%s'" % (card, card[::-1])
+	db.execute(q)
 
 	# TODO flag duplicates
 	cards = query_cards(card)
 	if cards:
-		update_timestamp(card)
+		card = cards.pop(0)
+		log.debug("Card id %s" % card['id'])
 
-		# TODO update db with entry time
+		for temp in cards:
+			pass
+
+		update_timestamp(card['serial'])
+
 		log.info("Unlocking")
 		GPIO.output(17, GPIO.HIGH)		
 
-		play_sound("/home/pi/soundbyte/%s" % (cards[0]['soundbyte']))
+		time.sleep(5)
+		play_sound("/home/pi/soundbyte/%s" % (card['soundbyte']))
 
-		time.sleep(3)
 		log.debug("Locking")
 		GPIO.output(17, GPIO.LOW)
 
