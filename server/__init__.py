@@ -6,6 +6,8 @@ import sqlite3
 import atexit
 import time
 import logging
+import pygame
+import threading
 
 def dict_factory(cursor, row):
 	d = {}
@@ -59,6 +61,7 @@ class App(DaemonApp):
 		self.db_file = db_file
 		
 		self.last_card = None
+		self.last_read = 0.0
 
 	def setup(self):
 		self.log.info("starting")
@@ -68,16 +71,27 @@ class App(DaemonApp):
 		GPIO.setup(17, GPIO.OUT)
 		GPIO.output(17, GPIO.LOW)
 
+		
+
 	def loop(self):
 		card = self.serial.readline()
 		if not card:
 			self.last_card = None
 			return
 
+		now = time.time()
+		if now - self.last_read > 5.0:
+			self.last_card = None
+
 		card = card.strip()
-		if card == self.last_card or len(card) != 10:
+		if len(card) != 10:
+			return
+
+		self.last_read = now
+		if card == self.last_card:
 			return
 		self.last_card = card
+		
 
 		self.handle_card_read(card)
 
@@ -104,13 +118,11 @@ class App(DaemonApp):
 			self.update_timestamp(db, card['serial'])
 
 			self.log.info("%s has entered the space" % (card["owner"],))
-			GPIO.output(17, GPIO.HIGH)		
 
-			time.sleep(5)
-			self.play_sound("/home/pi/soundbyte/%s" % (card['soundbyte'],))
-
-			self.log.info("Locking")
-			GPIO.output(17, GPIO.LOW)
+			threading.Thread(target=self.play_sound, kwargs={"path": "/home/pi/soundbyte/%s" % (card['soundbyte'],)}).start()
+			threading.Thread(target=self.unlock_door, kwargs={"duration": 5.0}).start()
+			#self.play_sound("/home/pi/soundbyte/%s" % (card['soundbyte'],))
+			#self.unlock_door(5.0)
 
 		db.close()
 
@@ -126,6 +138,11 @@ class App(DaemonApp):
 		db.execute(q)
 
 		db.commit()
+
+	def unlock_door(self, duration):
+		GPIO.output(17, GPIO.HIGH)
+		time.sleep(duration)
+		GPIO.output(17, GPIO.LOW)
 
 	def play_sound(self, path):
 		if not (path and os.path.exists(path)):
