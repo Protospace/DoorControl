@@ -1,0 +1,8 @@
+#
+# m h  dom mon dow   command
+0 4 * * * /home/pi/go-card.sh
+15 */6 * * * /home/pi/copylog.sh
+15 18-23 * * 2 /home/pi/copylog.sh
+15 20-23 25 6 * /home/pi/copylog.sh
+15 * 26 6 * /home/pi/copylog.sh
+
