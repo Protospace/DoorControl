@@ -33,7 +33,8 @@ case "$1" in
     ;;
   restart)
     echo "Restarting server"
-    python $DAEMON restart
+    python $DAEMON stop
+	python $DAEMON start
     ;;
   *)
     # Refuse to do other stuff

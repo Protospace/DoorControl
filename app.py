@@ -29,7 +29,7 @@ log.addHandler(handler)
 log.setLevel(logging.INFO)
 
 #ser = serial.Serial(port='/dev/ttyAMA0', baudrate=2400, timeout=.5)
-ser = serial.Serial(port='/dev/ttyAMA0', baudrate=2400)
+ser = serial.Serial(port='/dev/ttyAMA0', baudrate=2400, timeout=.1)
 
 try:
 	app = server.App(ser, db_file)
