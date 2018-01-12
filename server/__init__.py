@@ -8,6 +8,7 @@ import time
 import logging
 import pygame
 import threading
+import urllib
 
 def dict_factory(cursor, row):
 	d = {}
@@ -60,8 +61,7 @@ class App(DaemonApp):
 		self.serial = serial
 		self.db_file = db_file
 		
-		self.last_card = None
-		self.last_read = 0.0
+		self.recent = {}
 
 	def setup(self):
 		self.log.info("starting")
@@ -71,27 +71,22 @@ class App(DaemonApp):
 		GPIO.setup(17, GPIO.OUT)
 		GPIO.output(17, GPIO.LOW)
 
-		
-
 	def loop(self):
 		card = self.serial.readline()
 		if not card:
-			self.last_card = None
 			return
-
-		now = time.time()
-		if now - self.last_read > 5.0:
-			self.last_card = None
 
 		card = card.strip()
 		if len(card) != 10:
 			return
 
-		self.last_read = now
-		if card == self.last_card:
-			return
-		self.last_card = card
-		
+		now = time.time()
+		if card in self.recent:
+			if now - self.recent[card] < 5.0:
+				self.recent[card] = now
+				return
+
+		self.recent[card] = now
 
 		self.handle_card_read(card)
 
@@ -99,10 +94,9 @@ class App(DaemonApp):
 		self.log.info("stopping")
 
 	def handle_card_read(self, card):
-		self.log.info("Card read: %s" % (card,))
-
 		db = sqlite3.connect(self.db_file)
 		db.row_factory = dict_factory
+                baseurl = "http://my.protospace.ca/locks/door/108A/"
 
 		self.unify_serial_numbers(db, card)
 
@@ -116,19 +110,35 @@ class App(DaemonApp):
 				pass
 
 			self.update_timestamp(db, card['serial'])
+			if not card['active']:
+				self.log.warn("%s[%s] denied access" % (card["owner"], card['serial']))
+                                urlaction = "DENIED"
+                                rfid = "%s" % card['serial']
 
-			self.log.info("%s has entered the space" % (card["owner"],))
+			else:
+				self.log.info("%s[%s] entered the space" % (card["owner"], card['serial']))
+                                urlaction = "ALLOWED"
+                                rfid = "%s" % card['serial']
 
-			threading.Thread(target=self.play_sound, kwargs={"path": "/home/pi/soundbyte/%s" % (card['soundbyte'],)}).start()
-			threading.Thread(target=self.unlock_door, kwargs={"duration": 5.0}).start()
-			#self.play_sound("/home/pi/soundbyte/%s" % (card['soundbyte'],))
-			#self.unlock_door(5.0)
+				threading.Thread(target=self.play_sound, kwargs={"path": "/home/pi/soundbyte/%s" % (card['soundbyte'],)}).start()
+				threading.Thread(target=self.unlock_door, kwargs={"duration": 5.0}).start()
 
+		else:
+			self.log.info("Card read: %s" % (card,))
+                        rfid = "%s" % (card,)
+                        urlaction = "NOT IN DB"
+
+                url = baseurl + rfid + "/" + urlaction
+                response = urllib.urlopen(url).read()
+                self.log.info("Web log response was %s" % (response))
 		db.close()
 
 	def unify_serial_numbers(self, db, card):
-		q = "UPDATE cards SET serial = '%s' WHERE serial = '%s'" % (card, card[::-1])
+		q = "UPDATE cards SET serial='%s' WHERE serial='%s'" % (card, card[::-1])
 		db.execute(q)
+
+	def update_scan_log(self, db, card):
+		q = "INSERT INTO scan_logs"
 
 	def update_timestamp(self, db, card):
 		q = "UPDATE cards SET first_seen = datetime('now') WHERE serial = '%s' AND first_seen IS NULL" % (card)
@@ -157,7 +167,7 @@ class App(DaemonApp):
 
 	def query_cards(self, db, card):
 		cur = db.cursor()
-		query = "SELECT * FROM cards WHERE serial = '%s' ORDER BY id ASC" % card
+		query = "SELECT * FROM cards WHERE serial='%s' ORDER BY id ASC" % card
 		cur.execute(query)
 
 		cards = []
