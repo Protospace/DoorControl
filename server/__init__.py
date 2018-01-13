@@ -120,7 +120,6 @@ class App(DaemonApp):
                                 urlaction = "ALLOWED"
                                 rfid = "%s" % card['serial']
 
-				threading.Thread(target=self.play_sound, kwargs={"path": "/home/pi/soundbyte/%s" % (card['soundbyte'],)}).start()
 				threading.Thread(target=self.unlock_door, kwargs={"duration": 5.0}).start()
 
 		else:
@@ -128,9 +127,14 @@ class App(DaemonApp):
                         rfid = "%s" % (card,)
                         urlaction = "NOT IN DB"
 
-                url = baseurl + rfid + "/" + urlaction
-                response = urllib.urlopen(url).read()
-                self.log.info("Web log response was %s" % (response))
+		url = baseurl + rfid + "/" + urlaction
+        
+		try:
+			response = urllib.urlopen(url).read()
+			self.log.info("Web log response was %s" % (response))
+		except:
+			self.log.warn("A generic error occurred on the web call.")
+			
 		db.close()
 
 	def unify_serial_numbers(self, db, card):
