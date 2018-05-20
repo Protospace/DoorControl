@@ -60,16 +60,20 @@ class App(DaemonApp):
 
 		self.serial = serial
 		self.db_file = db_file
-		
+
 		self.recent = {}
 
 	def setup(self):
-		self.log.info("starting")
-
+		self.log.info("Starting (fron __init__.py)")
+		self.log.info("Configuring GPIO")
 		GPIO.setwarnings(False)
 		GPIO.setmode(GPIO.BCM)
+		self.log.info("Setting 17 (Relay) to low (Locked)")
 		GPIO.setup(17, GPIO.OUT)
 		GPIO.output(17, GPIO.LOW)
+		self.log.info("Setting 27 (RFID enable) to low (Red/Enabled)")
+		GPIO.setup(27, GPIO.OUT)
+		GPIO.output(27, GPIO.LOW)
 
 	def loop(self):
 		card = self.serial.readline()
@@ -128,13 +132,15 @@ class App(DaemonApp):
                         urlaction = "NOT IN DB"
 
 		url = baseurl + rfid + "/" + urlaction
-        
+
 		try:
 			response = urllib.urlopen(url).read()
 			self.log.info("Web log response was %s" % (response))
 		except:
 			self.log.warn("A generic error occurred on the web call.")
-			
+			GPIO.output(27, GPIO.LOW) 
+
+
 		db.close()
 
 	def unify_serial_numbers(self, db, card):
@@ -154,9 +160,16 @@ class App(DaemonApp):
 		db.commit()
 
 	def unlock_door(self, duration):
+		self.log.info("Unlocking Door with Relay to HIGH")
 		GPIO.output(17, GPIO.HIGH)
+		self.log.info("Disabling RFID, LED to GREEN")
+		GPIO.output(27, GPIO.HIGH)
 		time.sleep(duration)
+		self.log.info("Relocking door with Relay to LOW")
 		GPIO.output(17, GPIO.LOW)
+		time.sleep(1)
+		self.log.info("Enabling RFID, LED to RED with LOW")
+		GPIO.output(27, GPIO.LOW)
 
 	def play_sound(self, path):
 		if not (path and os.path.exists(path)):
